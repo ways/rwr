@@ -1,0 +1,9 @@
+services:
+  rwr:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: rwr
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
