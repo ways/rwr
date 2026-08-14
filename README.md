@@ -1,6 +1,8 @@
 # RWR
 A web based Radar Warning Receiver for mobile phones.
 
+![Screenshot](/screenshot.png)
+
 [Demo](https://falkp.no/rwr/)
 
 ## Explanation
