@@ -438,7 +438,8 @@ function soundTick(){
  if(!state.sound||!state.threats.length){stopSounds();return;}
  var min=Infinity;
  state.threats.forEach(function(t){if(t.dist<min)min=t.dist;});
- var locked=min<200;
+ var lockDist=(state.mode==='OSAPI')?2000:200;
+ var locked=min<lockDist;
  if(locked){
   lockActive=true;
   try{audioPing.pause();audioPing.currentTime=0;}catch(e){}

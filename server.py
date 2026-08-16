@@ -20,7 +20,7 @@ RETRYABLE = (429, 502, 503, 504)
 
 OSAPI = "https://opensky-network.org/api/states/all"
 OSAPI_TOKEN_URL = (
-    "https://auth.opensky-network.org/auth/realms/"
+    "https://auth.opensky-network.org/auth/realms/"  # nosec B105 - token endpoint URL, not a secret
     "opensky-network/protocol/openid-connect/token"
 )
 OSAPI_USER_AGENT = "https://github.com/ways/rwr"
@@ -135,7 +135,7 @@ class _TokenManager:
         ).encode()
         req = urllib.request.Request(OSAPI_TOKEN_URL, data=data, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 - constant https URL
                 j = json.loads(resp.read().decode("utf-8", "replace"))
             self.token = j.get("access_token")
             self.expires_at = time.time() + int(j.get("expires_in", 1800)) - 30
@@ -282,11 +282,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         t1 = time.time()
         for attempt in range(2):
             try:
-                with urllib.request.urlopen(req, timeout=25) as resp:
+                with urllib.request.urlopen(req, timeout=25) as resp:  # nosec B310 - constant https URL
                     data = json.loads(resp.read().decode("utf-8", "replace"))
                     rem = resp.headers.get("X-Rate-Limit-Remaining")
                     if rem is not None:
-                        OSAPI_REMAINING = int(rem)
+                        try:
+                            OSAPI_REMAINING = int(rem)
+                        except ValueError:
+                            pass
                 OSAPI_BACKOFF_UNTIL = 0.0
                 break
             except urllib.error.HTTPError as e:
@@ -295,7 +298,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if e.code == 429:
                     retry = e.headers.get("X-Rate-Limit-Retry-After-Seconds")
                     if retry is not None:
-                        OSAPI_BACKOFF_UNTIL = time.time() + int(retry)
+                        try:
+                            OSAPI_BACKOFF_UNTIL = time.time() + int(retry)
+                        except ValueError:
+                            OSAPI_BACKOFF_UNTIL = time.time() + 60
                 if e.code in RETRYABLE and attempt == 0:
                     time.sleep(2)
                     continue
@@ -402,7 +408,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         for attempt in range(2):
             t1 = time.time()
             try:
-                with urllib.request.urlopen(req, timeout=40) as resp:
+                with urllib.request.urlopen(req, timeout=40) as resp:  # nosec B310 - constant https URL
                     data = resp.read()
                     ctype = resp.headers.get("Content-Type", "application/json")
                 print(
