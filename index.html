@@ -71,12 +71,12 @@ function loadNum(k,ranges,d){var v=parseInt(localStorage.getItem(k),10);return r
 function loadBool(k,d){var v=localStorage.getItem(k);return v===null?d:v==='1';}
 function modeCfg(){return MODE_CFG[state.mode];}
 function fmtDist(m){
- if(state.units==='IMP')return (m*0.000621371).toFixed(1)+'MI';
+ if(state.units==='IMP')return (m*0.000539957).toFixed(1)+'NM';
  if(m>=1000)return Math.round(m/1000)+'KM';
  return Math.round(m)+'M';
 }
 function fmtBRA(m){
- if(state.units==='IMP')return (m*0.000621371).toFixed(1)+'MI';
+ if(state.units==='IMP')return (m*0.000539957).toFixed(1)+'NM';
  if(m>=1000)return (m/1000).toFixed(1)+'KM';
  return Math.round(m)+'M';
 }
@@ -96,7 +96,7 @@ var state={
  headingRaw:null,headingSource:'none',
  simLat:null,simLon:null,simHdg:null,
  threats:[],top:null,selectedId:null,lastFetch:0,lastFetchLat:null,lastFetchLon:null,
-  refreshPending:false,started:false,status:'POWER OFF',osmText:(localStorage.getItem('rwr.mode')==='OSAPI'?'OSAPI':'OSM')+' --:--:--',fetchStart:null,stale:false,cacheTried:false,
+  refreshPending:false,started:false,status:'POWER OFF',osmText:(localStorage.getItem('rwr.mode')==='OSAPI'?'OSAPI':'OSM')+' --:--:--',fetchStart:null,stale:false,cacheTried:false,apiTime:null,
  range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET'
 };
 state.range=loadNum(modeCfg().key,modeCfg().ranges,modeCfg().def);
@@ -152,8 +152,8 @@ function threatGlyph(t){
  return{glyph:threatType(t),hat:!(t.onGround||(t.alt!=null&&t.alt<304.8))};
 }
 function threatAge(t){
- if(t.lastPos==null)return 0;
- return Date.now()/1000-t.lastPos;
+ if(t.updated==null)return 0;
+ return Date.now()/1000-t.updated;
 }
 function threatScreen(t,hdg,R,innerR,cx,cy){
  var et=(state.mode==='OSAPI')?extrapolate(t):t;
@@ -308,10 +308,12 @@ function doFetchApi(){
 }
 function processApi(data,staleHeader){
  if(!state.started)return;
- var now=Date.now();
+ var now=Date.now(),nowS=now/1000;
  var firstFetch=state.lastFetch===0;
  state.stale=!!staleHeader;
  state.lastFetch=now;state.lastFetchLat=state.lat;state.lastFetchLon=state.lon;
+ var newSnap=state.apiTime!==data.time;
+ state.apiTime=data.time;
  var byId={};
  state.threats.forEach(function(t){byId[t.id]=t;});
  var list=[],seen={};
@@ -320,13 +322,15 @@ function processApi(data,staleHeader){
   if(seen[o.id])return;seen[o.id]=1;
   var dist=haversine(state.lat,state.lon,o.lat,o.lon);
   if(dist>state.range)return;
-  var lpos=o.tp!=null?o.tp:(o.lc!=null?o.lc:null);
+  var lpos=o.lc!=null?o.lc:(o.tp!=null?o.tp:null);
   var old=byId[o.id];
-  if(old&&lpos===old.lastPos&&old.lastPos!=null&&o.lat===old.lat&&o.lon===old.lon){
-   list.push(old);
-   return;
-  }
   if(old){
+   if(newSnap)old.updated=nowS;
+   else if(lpos!=null&&old.updated!=null&&lpos>old.updated)old.updated=lpos;
+   if(lpos===old.lastPos&&old.lastPos!=null&&o.lat===old.lat&&o.lon===old.lon){
+    list.push(old);
+    return;
+   }
    old.lat=o.lat;old.lon=o.lon;old.alt=o.alt;old.vel=o.v;old.track=o.t;old.vr=o.vr;
    old.onGround=o.og;old.cat=o.cat;old.callsign=o.cs;old.osname=o.cs;old.lastPos=lpos;
    old.bearing=bearing(state.lat,state.lon,o.lat,o.lon);old.dist=dist;old.ts=now;
@@ -334,10 +338,10 @@ function processApi(data,staleHeader){
   }else{
    list.push({id:o.id,symbol:'^',callsign:o.cs,osname:o.cs,lat:o.lat,lon:o.lon,
     bearing:bearing(state.lat,state.lon,o.lat,o.lon),dist:dist,priority:0,ts:now,
-    alt:o.alt,vel:o.v,track:o.t,vr:o.vr,onGround:o.og,cat:o.cat,lastPos:lpos});
+    alt:o.alt,vel:o.v,track:o.t,vr:o.vr,onGround:o.og,cat:o.cat,lastPos:lpos,updated:nowS});
   }
  });
- list=list.filter(function(t){return threatAge(t)<60;});
+ list=list.filter(function(t){return nowS-t.updated<60;});
  list.sort(function(a,b){return a.dist-b.dist;});
  state.threats=list;
  var fresh=false;
@@ -408,9 +412,9 @@ function toggleMode(){
  localStorage.setItem('rwr.mode',state.mode);
  state.range=modeCfg().def;
  localStorage.setItem(modeCfg().key,String(state.range));
- state.threats=[];state.top=null;state.selectedId=null;known={};
- state.lastFetch=0;state.lastFetchLat=null;state.lastFetchLon=null;
- state.fetchStart=null;state.refreshPending=false;state.stale=false;state.cacheTried=false;
+  state.threats=[];state.top=null;state.selectedId=null;known={};
+  state.lastFetch=0;state.lastFetchLat=null;state.lastFetchLon=null;
+  state.fetchStart=null;state.refreshPending=false;state.stale=false;state.cacheTried=false;state.apiTime=null;
  state.osmText=(state.mode==='OSAPI'?'OSAPI':'OSM')+' --:--:--';
  updateButtons();
  if(state.started)refresh();
@@ -622,18 +626,17 @@ function braLines(sel){
  var td=(state.lat!=null&&et.lat!=null)?haversine(state.lat,state.lon,et.lat,et.lon):sel.dist;
  var alt=(state.mode==='OSAPI')?(sel.alt!=null?sel.alt:0):((state.gpsAlt!=null&&!isNaN(state.gpsAlt))?state.gpsAlt:0);
  var lines=[
-  'B '+String(Math.round(tb)%360).padStart(4,' '),
+  'B '+String(Math.round(tb)%360).padStart(4,' ')+'°',
   'R '+fmtBRA(td),
   'A '+fmtALT(alt)
  ];
  if(state.mode==='OSAPI'){
   if(sel.callsign)lines.unshift(sel.callsign.slice(0,8));
-  var hd=sel.track!=null?String(Math.round(sel.track)%360).padStart(4,' '):' ---';
+  var hd=sel.track!=null?String(Math.round(sel.track)%360).padStart(4,' ')+'°':' ---';
   var sp=sel.vel!=null?(state.units==='IMP'?Math.round(sel.vel*1.943844):Math.round(sel.vel*3.6)):null;
   lines.push('H '+hd);
-  lines.push('S '+(sp!=null?String(sp).padStart(4,' '):' ---'));
+  lines.push('S '+(sp!=null?String(sp).padStart(4,' ')+(state.units==='IMP'?'KT':'KM/H'):' ---'));
  }
- lines.push(state.units==='IMP'?'IMP':'MET');
  return lines;
 }
 function braBox(R,sel){
@@ -735,6 +738,7 @@ function powerOn(){
  if(state.started)return;
  state.started=true;
  state.cacheTried=false;
+ state.apiTime=null;
  updateButtons();
  wakeLock();
  if(!geoStarted){geoStarted=true;startGeo();}
@@ -752,7 +756,7 @@ function powerOff(){
  stopSounds();
  releaseWakeLock();
   state.threats=[];state.top=null;state.selectedId=null;state.status='';state.osmText=(state.mode==='OSAPI'?'OSAPI':'OSM')+' --:--:--';
-  state.fetchStart=null;state.refreshPending=false;
+  state.fetchStart=null;state.refreshPending=false;state.apiTime=null;
  updateButtons();
 }
 var lastGesture=0;
