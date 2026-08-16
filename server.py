@@ -31,17 +31,19 @@ OSAPI_CACHE_MAX_AGE = 3600
 RATE_LIMIT = {}
 RATE_WINDOW = 60.0
 try:
-    RATE_MAX = int(os.environ.get("RWR_RATE_MAX", 30))
+    RATE_MAX = int(os.environ.get("RWR_RATE_MAX", 60))
 except ValueError:
-    RATE_MAX = 30
+    RATE_MAX = 60
 OSAPI_CLIENT_ID = os.environ.get("OPENSKY_CLIENT_ID", "").strip()
 OSAPI_CLIENT_SECRET = os.environ.get("OPENSKY_CLIENT_SECRET", "").strip()
 OSAPI_CREDENTIALS = bool(OSAPI_CLIENT_ID and OSAPI_CLIENT_SECRET)
-_DEFAULT_OSAPI_TTL = 25 if OSAPI_CREDENTIALS else 240
+_DEFAULT_OSAPI_TTL = 10 if OSAPI_CREDENTIALS else 240
 try:
     OSAPI_TTL = int(os.environ.get("RWR_OSAPI_TTL", _DEFAULT_OSAPI_TTL))
 except ValueError:
     OSAPI_TTL = _DEFAULT_OSAPI_TTL
+OSAPI_REMAINING = None
+OSAPI_BACKOFF_UNTIL = 0.0
 
 
 def _normalize_key(payload):
@@ -87,6 +89,16 @@ def _prune_osapi_cache():
         k = min(OSAPI_CACHE, key=lambda k: OSAPI_CACHE[k]["ts"])
         OSAPI_CACHE_BYTES -= OSAPI_CACHE[k]["size"]
         del OSAPI_CACHE[k]
+
+
+def _effective_ttl():
+    """Cache TTL, stretched to stretch the daily credit budget when it runs low."""
+    ttl = OSAPI_TTL
+    if OSAPI_REMAINING is not None and OSAPI_REMAINING < 100:
+        pace = 3600 * 12 / max(1, OSAPI_REMAINING)
+        if pace > ttl:
+            ttl = int(pace)
+    return ttl
 
 
 def _rate_allowed(ip):
@@ -226,7 +238,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(404, b"not found")
 
     def _osapi(self):
-        global OSAPI_CACHE_BYTES
+        global OSAPI_CACHE_BYTES, OSAPI_REMAINING, OSAPI_BACKOFF_UNTIL
         if not _rate_allowed(self.client_address[0]):
             self._send(429, b"rate limited")
             return
@@ -247,7 +259,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         now = time.time()
         key = "%.2f,%.2f,%.0f" % (lat, lon, rng)
         cached = OSAPI_CACHE.get(key)
-        if cached is not None and cached["ts"] + OSAPI_TTL >= now:
+        if OSAPI_BACKOFF_UNTIL > now:
+            if cached is not None:
+                self._send(200, cached["data"], "application/json", {"X-RWR-Stale": "1"})
+            else:
+                self._send(503, b"upstream rate limited", "text/plain")
+            return
+        if cached is not None and cached["ts"] + _effective_ttl() >= now:
             print(f"[{time.strftime('%H:%M:%S')}] GET /osapi cache hit", flush=True)
             self._send(200, cached["data"], "application/json")
             return
@@ -266,10 +284,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 with urllib.request.urlopen(req, timeout=25) as resp:
                     data = json.loads(resp.read().decode("utf-8", "replace"))
+                    rem = resp.headers.get("X-Rate-Limit-Remaining")
+                    if rem is not None:
+                        OSAPI_REMAINING = int(rem)
+                OSAPI_BACKOFF_UNTIL = 0.0
                 break
             except urllib.error.HTTPError as e:
                 if e.code == 401:
                     TOKENS.token = None
+                if e.code == 429:
+                    retry = e.headers.get("X-Rate-Limit-Retry-After-Seconds")
+                    if retry is not None:
+                        OSAPI_BACKOFF_UNTIL = time.time() + int(retry)
                 if e.code in RETRYABLE and attempt == 0:
                     time.sleep(2)
                     continue
@@ -334,7 +360,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         OSAPI_CACHE_BYTES += len(body)
         OSAPI_CACHE[key] = {"data": body, "ts": now, "size": len(body)}
         print(
-            f"[{time.strftime('%H:%M:%S')}] GET /osapi upstream -> 200 {time.time() - t1:.2f}s ({len(states)} states)",
+            f"[{time.strftime('%H:%M:%S')}] GET /osapi upstream -> 200 {time.time() - t1:.2f}s ({len(states)} states)"
+            + (f" credits={OSAPI_REMAINING}" if OSAPI_REMAINING is not None else ""),
             flush=True,
         )
         self._send(200, body, "application/json")

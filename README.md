@@ -16,12 +16,14 @@ Click an object to target it. Hold top left to show real object names. If you ge
 
 ## Modes
 - **OSM** (default): ground objects from OpenStreetMap/Overpass. Ranges 500M/1KM/2KM.
-- **OSAPI**: live aircraft from the [OpenSky Network](https://opensky-network.org/api), refreshed every 3s. Ranges 10KM/50KM. The MODE button toggles between them and the choice is stored in local storage.
+- **OSAPI**: live aircraft from the [OpenSky Network](https://opensky-network.org/api), refreshed every 2s. Ranges 10KM/50KM. The MODE button toggles between them and the choice is stored in local storage.
 
 The OpenSky upstream is proxied and cached by the python backend. Anonymous access is limited to 400 credits/day (~1 credit per query), so the backend only calls OpenSky at most every `RWR_OSAPI_TTL` seconds (default 240s anonymous). To get fresher data, create a free OpenSky API client (account → API clients) and set:
 
-- `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` — backend then fetches an OAuth2 bearer token and defaults `RWR_OSAPI_TTL` to 25s (4000 credits/day).
+- `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` — backend then fetches an OAuth2 bearer token and defaults `RWR_OSAPI_TTL` to 10s (4000 credits/day, ~1 credit per bbox query). OpenSky data itself only updates every ~5-15s, so 10s is effectively as fresh as it gets.
 - `RWR_OSAPI_TTL` — overrides the upstream cache TTL in seconds.
+
+To protect the daily credit budget, the backend tracks `X-Rate-Limit-Remaining` and stretches the cache TTL when fewer than 100 credits are left, and honors `X-Rate-Limit-Retry-After-Seconds` after a 429 so it stops querying until OpenSky allows retries.
 
 ## Build container image
 - Copy font to fonts/

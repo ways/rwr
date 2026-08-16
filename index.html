@@ -342,7 +342,7 @@ function processApi(data,staleHeader){
 function maybeFetch(){
  if(!state.started||state.refreshPending||state.lat==null)return;
  if(state.mode==='OSAPI'){
-  if(state.lastFetch===0||Date.now()-state.lastFetch>=3000)refresh();
+   if(state.lastFetch===0||Date.now()-state.lastFetch>=2000)refresh();
   return;
  }
  var moved=0;
