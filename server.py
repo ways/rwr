@@ -321,6 +321,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "t": row[10],
                     "vr": row[11],
                     "og": bool(row[8]),
+                    "tp": row[3],
+                    "lc": row[4],
+                    "cat": row[17] if len(row) > 17 else None,
                     "d": round(dist, 1),
                     "b": round(_bearing(lat, lon, a_lat, a_lon), 1),
                 }

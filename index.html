@@ -43,8 +43,8 @@ var WHITE='#ffffff';
 var BAR=110;
 var SOUND_MS=1500;
 var MODE_CFG={
- OSM:{ranges:[500,1000,2000],labels:{500:'500M',1000:'1KM',2000:'2KM'},def:1000,max:2000,drop:5000,key:'rwr.rng'},
- OSAPI:{ranges:[10000,50000],labels:{10000:'10KM',50000:'50KM'},def:10000,max:50000,drop:60000,key:'rwr.rngApi'}
+ OSM:{ranges:[500,1000,2000],def:1000,max:2000,drop:5000,key:'rwr.rng'},
+ OSAPI:{ranges:[10000,50000],def:10000,max:50000,drop:60000,key:'rwr.rngApi'}
 };
 var CACHE_KEY='rwr.cache';
 var CACHE_MATCH_M=1000;
@@ -70,14 +70,34 @@ var CATEGORIES=[
 function loadNum(k,ranges,d){var v=parseInt(localStorage.getItem(k),10);return ranges.indexOf(v)>=0?v:d;}
 function loadBool(k,d){var v=localStorage.getItem(k);return v===null?d:v==='1';}
 function modeCfg(){return MODE_CFG[state.mode];}
+function fmtDist(m){
+ if(state.units==='IMP')return (m*0.000621371).toFixed(1)+'MI';
+ if(m>=1000)return Math.round(m/1000)+'KM';
+ return Math.round(m)+'M';
+}
+function fmtBRA(m){
+ if(state.units==='IMP')return (m*0.000621371).toFixed(1)+'MI';
+ if(m>=1000)return (m/1000).toFixed(1)+'KM';
+ return Math.round(m)+'M';
+}
+function fmtALT(a){
+ if(a==null||isNaN(a))a=0;
+ if(state.units==='IMP')return Math.round(a*3.28084)+'FT';
+ return Math.round(a)+'M';
+}
+function toggleUnits(){
+ state.units=state.units==='MET'?'IMP':'MET';
+ localStorage.setItem('rwr.units',state.units);
+ updateButtons();
+}
 var state={
  mode:localStorage.getItem('rwr.mode')==='OSAPI'?'OSAPI':'OSM',
  lat:null,lon:null,gpsFix:false,gpsHdg:null,gpsText:'GPS ---',gpsAlt:null,
  headingRaw:null,headingSource:'none',
  simLat:null,simLon:null,simHdg:null,
  threats:[],top:null,selectedId:null,lastFetch:0,lastFetchLat:null,lastFetchLon:null,
-  refreshPending:false,started:false,status:'POWER OFF',osmText:(localStorage.getItem('rwr.mode')==='OSAPI'?'API':'OSM')+' --:--:--',fetchStart:null,stale:false,cacheTried:false,
- range:null,sound:loadBool('rwr.snd',true)
+  refreshPending:false,started:false,status:'POWER OFF',osmText:(localStorage.getItem('rwr.mode')==='OSAPI'?'OSAPI':'OSM')+' --:--:--',fetchStart:null,stale:false,cacheTried:false,
+ range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET'
 };
 state.range=loadNum(modeCfg().key,modeCfg().ranges,modeCfg().def);
 if(params.get('lat'))state.simLat=parseFloat(params.get('lat'));
@@ -113,9 +133,32 @@ function pickTop(){
  });
  state.top=best;
 }
+function extrapolate(t){
+ var now=Date.now();
+ var dt=(now-(t.ts||now))/1000;
+ if(dt<=0||t.vel==null||t.track==null||t.lat==null)return t;
+ dt=Math.min(dt,240);
+ var d=t.vel*dt;
+ var br=toRad(t.track);
+ var dLat=(d/111320)*Math.cos(br);
+ var dLon=(d/(111320*Math.cos(toRad(t.lat))))*Math.sin(br);
+ return{lat:t.lat+dLat,lon:t.lon+dLon};
+}
+function threatType(t){
+ if(t.cat===8)return'AH';
+ return'F';
+}
+function threatGlyph(t){
+ return{glyph:threatType(t),hat:!(t.onGround||(t.alt!=null&&t.alt<304.8))};
+}
+function threatAge(t){
+ if(t.lastPos==null)return 0;
+ return Date.now()/1000-t.lastPos;
+}
 function threatScreen(t,hdg,R,innerR,cx,cy){
- var tb=(state.lat!=null&&t.lat!=null)?bearing(state.lat,state.lon,t.lat,t.lon):t.bearing;
- var td=(state.lat!=null&&t.lat!=null)?haversine(state.lat,state.lon,t.lat,t.lon):t.dist;
+ var et=(state.mode==='OSAPI')?extrapolate(t):t;
+ var tb=(state.lat!=null&&et.lat!=null)?bearing(state.lat,state.lon,et.lat,et.lon):t.bearing;
+ var td=(state.lat!=null&&et.lat!=null)?haversine(state.lat,state.lon,et.lat,et.lon):t.dist;
  if(td>state.range)return null;
  var isTop=state.top&&t.id===state.top.id;
  var rel=norm(tb-hdg);
@@ -267,32 +310,48 @@ function processApi(data,staleHeader){
  if(!state.started)return;
  var now=Date.now();
  var firstFetch=state.lastFetch===0;
-  state.stale=!!staleHeader;
-  state.lastFetch=now;state.lastFetchLat=state.lat;state.lastFetchLon=state.lon;
-  var list=[],seen={};
-  (data.states||[]).forEach(function(o){
-   if(o.lat==null||o.lon==null)return;
-   if(seen[o.id])return;seen[o.id]=1;
-   var dist=haversine(state.lat,state.lon,o.lat,o.lon);
-   if(dist>state.range)return;
+ state.stale=!!staleHeader;
+ state.lastFetch=now;state.lastFetchLat=state.lat;state.lastFetchLon=state.lon;
+ var byId={};
+ state.threats.forEach(function(t){byId[t.id]=t;});
+ var list=[],seen={};
+ (data.states||[]).forEach(function(o){
+  if(o.lat==null||o.lon==null)return;
+  if(seen[o.id])return;seen[o.id]=1;
+  var dist=haversine(state.lat,state.lon,o.lat,o.lon);
+  if(dist>state.range)return;
+  var lpos=o.tp!=null?o.tp:(o.lc!=null?o.lc:null);
+  var old=byId[o.id];
+  if(old&&lpos===old.lastPos&&old.lastPos!=null&&o.lat===old.lat&&o.lon===old.lon){
+   list.push(old);
+   return;
+  }
+  if(old){
+   old.lat=o.lat;old.lon=o.lon;old.alt=o.alt;old.vel=o.v;old.track=o.t;old.vr=o.vr;
+   old.onGround=o.og;old.cat=o.cat;old.callsign=o.cs;old.osname=o.cs;old.lastPos=lpos;
+   old.bearing=bearing(state.lat,state.lon,o.lat,o.lon);old.dist=dist;old.ts=now;
+   list.push(old);
+  }else{
    list.push({id:o.id,symbol:'^',callsign:o.cs,osname:o.cs,lat:o.lat,lon:o.lon,
-    bearing:bearing(state.lat,state.lon,o.lat,o.lon),dist:dist,priority:0,
-    alt:o.alt,vel:o.v,track:o.t,vr:o.vr,onGround:o.og});
-  });
-  list.sort(function(a,b){return a.dist-b.dist;});
-  state.threats=list;
-  var fresh=false;
-  list.forEach(function(t){if(!known[t.id]){fresh=true;known[t.id]=1;}});
-  if(fresh&&!firstFetch&&state.sound)tryPlay(audioNew);
-  pickTop();
-  var d=new Date(now);
-  function p2(n){return String(n).padStart(2,'0');}
-  state.osmText='API '+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())+' '+list.length;
-  var ms=state.fetchStart?now-state.fetchStart:0;
-  state.fetchStart=null;
-  state.osmText+=' +'+(ms/1000).toFixed(1)+'S';
-  if(state.stale)state.osmText+=' STALE';
-  state.status='';
+    bearing:bearing(state.lat,state.lon,o.lat,o.lon),dist:dist,priority:0,ts:now,
+    alt:o.alt,vel:o.v,track:o.t,vr:o.vr,onGround:o.og,cat:o.cat,lastPos:lpos});
+  }
+ });
+ list=list.filter(function(t){return threatAge(t)<60;});
+ list.sort(function(a,b){return a.dist-b.dist;});
+ state.threats=list;
+ var fresh=false;
+ list.forEach(function(t){if(!known[t.id]){fresh=true;known[t.id]=1;}});
+ if(fresh&&!firstFetch&&state.sound)tryPlay(audioNew);
+ pickTop();
+ var d=new Date(now);
+ function p2(n){return String(n).padStart(2,'0');}
+ state.osmText='OSAPI '+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())+' '+list.length;
+ var ms=state.fetchStart?now-state.fetchStart:0;
+ state.fetchStart=null;
+ state.osmText+=' +'+(ms/1000).toFixed(1)+'S';
+ if(state.stale)state.osmText+=' STALE';
+ state.status='';
 }
 function maybeFetch(){
  if(!state.started||state.refreshPending||state.lat==null)return;
@@ -310,11 +369,11 @@ function refresh(){
  state.refreshPending=true;
  state.fetchStart=Date.now();
  if(state.mode==='OSAPI'){
-  state.status='API WAIT';
+  state.status='OSAPI WAIT';
   doFetchApi().then(function(res){processApi(res.data,res.stale);}).catch(function(e){
    var ms=state.fetchStart?Date.now()-state.fetchStart:0;
    state.fetchStart=null;
-   state.status='API ERR '+(e&&e.message?e.message.slice(0,40):'NO RESP')+(ms?' (+'+(ms/1000).toFixed(1)+'S)':'');
+   state.status='OSAPI ERR '+(e&&e.message?e.message.slice(0,40):'NO RESP')+(ms?' (+'+(ms/1000).toFixed(1)+'S)':'');
   }).then(function(){state.refreshPending=false;});
   return;
  }
@@ -328,8 +387,8 @@ function refresh(){
 
 function updateButtons(){
  lblPwr.textContent='PWR';
- lblMode.textContent='MODE '+(state.mode==='OSAPI'?'API':'OSM');
- lblRng.textContent='RNG '+modeCfg().labels[state.range];
+ lblMode.textContent='MODE '+(state.mode==='OSAPI'?'OSAPI':'OSM');
+ lblRng.textContent='RNG '+fmtDist(state.range);
  lblSnd.textContent='SND';
  btnPwr.classList.toggle('active',state.started);
  btnMode.classList.add('active');
@@ -352,7 +411,7 @@ function toggleMode(){
  state.threats=[];state.top=null;state.selectedId=null;known={};
  state.lastFetch=0;state.lastFetchLat=null;state.lastFetchLon=null;
  state.fetchStart=null;state.refreshPending=false;state.stale=false;state.cacheTried=false;
- state.osmText=(state.mode==='OSAPI'?'API':'OSM')+' --:--:--';
+ state.osmText=(state.mode==='OSAPI'?'OSAPI':'OSM')+' --:--:--';
  updateButtons();
  if(state.started)refresh();
 }
@@ -465,15 +524,21 @@ function draw(){
     if(t.id===state.selectedId)selAlive=true;
     var p=s.p,size=s.size;
     if(apiMode){
-     var ang=t.track!=null?toRad(norm(t.track-hdg)):toRad(norm(t.bearing-hdg));
-     ctx.save();
-     ctx.translate(p[0],p[1]);
-     ctx.rotate(ang);
-     ctx.fillStyle=GREEN;
-     ctx.beginPath();
-     ctx.moveTo(0,-size);ctx.lineTo(size,size);ctx.lineTo(0,size*0.5);ctx.lineTo(-size,size);
-     ctx.closePath();ctx.fill();
-     ctx.restore();
+     var g=threatGlyph(t);
+     var col=threatAge(t)>20?DIM:GREEN;
+     ctx.fillStyle=col;
+     ctx.font='bold '+size+'px HornetDisplay,monospace';
+     ctx.textAlign='center';ctx.textBaseline='middle';
+     ctx.fillText(g.glyph,p[0],p[1]+size*0.1);
+     if(g.hat){
+      var hw=size*(g.glyph.length>1?0.72:0.5);
+      var hy=p[1]-size*0.62;
+      ctx.strokeStyle=col;ctx.lineWidth=Math.max(2,size*0.12);
+      ctx.lineCap='round';
+      ctx.beginPath();
+      ctx.moveTo(p[0]-hw,hy);ctx.lineTo(p[0],hy-size*0.42);ctx.lineTo(p[0]+hw,hy);
+      ctx.stroke();
+     }
     }else{
      ctx.fillStyle=GREEN;ctx.font='bold '+size+'px HornetDisplay,monospace';
      ctx.textAlign='center';ctx.textBaseline='middle';
@@ -515,7 +580,7 @@ function drawLight(x,y,s,label,lit){
  ctx.fillRect(x,y,s,s);
  ctx.strokeStyle='#3a3a3a';ctx.strokeRect(x,y,s,s);
  ctx.fillStyle=lit?GREEN:DIM;
-  ctx.font='bold '+(s*0.42)+'px HornetDisplay,monospace';
+  ctx.font='bold '+(s*0.42*Math.min(1,3.5/label.length))+'px HornetDisplay,monospace';
  ctx.textAlign='center';ctx.textBaseline='middle';
  ctx.fillText(label,x+s/2,y-s*0.25);
 }
@@ -542,40 +607,57 @@ function drawHud(R,hdg){
   if(state.fetchStart!=null)oLit=(Math.floor(Date.now()/350)%2)===0;
   var ly=py+pad+lightS*0.55;
   drawLight(px+pad,ly,lightS,'POS',state.lat!=null);
-  drawLight(px+pad+lightS+gap,ly,lightS,state.mode==='OSAPI'?'API':'OSM',oLit);
+  drawLight(px+pad+lightS+gap,ly,lightS,state.mode==='OSAPI'?'OSAPI':'OSM',oLit);
  ctx.textAlign='center';ctx.textBaseline='bottom';
  var bottomTxt='';
- if(state.fetchStart!=null)bottomTxt=(state.mode==='OSAPI'?'API':'OSM')+' WAIT '+((Date.now()-state.fetchStart)/1000).toFixed(1)+'S';
+ if(state.fetchStart!=null)bottomTxt=(state.mode==='OSAPI'?'OSAPI':'OSM')+' WAIT '+((Date.now()-state.fetchStart)/1000).toFixed(1)+'S';
  else if(state.status)bottomTxt=state.status;
  else if(state.osmText.indexOf('STALE')>=0)bottomTxt=state.osmText;
  if(bottomTxt)ctx.fillText(bottomTxt,W/2,H-8);
  drawBRA(R);
+}
+function braLines(sel){
+ var et=(state.mode==='OSAPI')?extrapolate(sel):sel;
+ var tb=(state.lat!=null&&et.lat!=null)?bearing(state.lat,state.lon,et.lat,et.lon):sel.bearing;
+ var td=(state.lat!=null&&et.lat!=null)?haversine(state.lat,state.lon,et.lat,et.lon):sel.dist;
+ var alt=(state.mode==='OSAPI')?(sel.alt!=null?sel.alt:0):((state.gpsAlt!=null&&!isNaN(state.gpsAlt))?state.gpsAlt:0);
+ var lines=[
+  'B '+String(Math.round(tb)%360).padStart(4,' '),
+  'R '+fmtBRA(td),
+  'A '+fmtALT(alt)
+ ];
+ if(state.mode==='OSAPI'){
+  if(sel.callsign)lines.unshift(sel.callsign.slice(0,8));
+  var hd=sel.track!=null?String(Math.round(sel.track)%360).padStart(4,' '):' ---';
+  var sp=sel.vel!=null?(state.units==='IMP'?Math.round(sel.vel*1.943844):Math.round(sel.vel*3.6)):null;
+  lines.push('H '+hd);
+  lines.push('S '+(sp!=null?String(sp).padStart(4,' '):' ---'));
+ }
+ lines.push(state.units==='IMP'?'IMP':'MET');
+ return lines;
+}
+function braBox(R,sel){
+ var fs=Math.max(14,R*0.085);
+ ctx.font='bold '+fs+'px HornetDisplay,monospace';
+ var pad=fs*0.45,lh=fs*1.5;
+ var lines=braLines(sel);
+ var bw=0;
+ lines.forEach(function(l){bw=Math.max(bw,ctx.measureText(l).width);});
+ var bx=W-10-(bw+pad*2),by=H-10-(lh*lines.length+pad*2);
+ return{bx:bx,by:by,w:bw+pad*2,h:lh*lines.length+pad*2,lines:lines,pad:pad,lh:lh,fs:fs};
 }
 function drawBRA(R){
  if(!state.selectedId)return;
  var sel=null;
  state.threats.forEach(function(t){if(t.id===state.selectedId)sel=t;});
  if(!sel)return;
- var tb=(state.lat!=null&&sel.lat!=null)?bearing(state.lat,state.lon,sel.lat,sel.lon):sel.bearing;
- var td=(state.lat!=null&&sel.lat!=null)?haversine(state.lat,state.lon,sel.lat,sel.lon):sel.dist;
- var alt=(state.mode==='OSAPI')?(sel.alt!=null?Math.round(sel.alt):0):((state.gpsAlt!=null&&!isNaN(state.gpsAlt))?Math.round(state.gpsAlt):0);
- var fs=Math.max(14,R*0.085);
- ctx.font='bold '+fs+'px HornetDisplay,monospace';
- var pad=fs*0.45,lh=fs*1.5;
- var lines=[
-  'B '+String(Math.round(tb)%360).padStart(4,' '),
-  'R '+String(Math.round(td)).padStart(4,' '),
-  'A '+String(alt).padStart(4,' ')
- ];
- if(state.mode==='OSAPI'&&sel.callsign)lines.unshift(sel.callsign.slice(0,8));
- var bw=0;
- lines.forEach(function(l){bw=Math.max(bw,ctx.measureText(l).width);});
- var bx=W-10-(bw+pad*2),by=H-10-(lh*lines.length+pad*2);
+ var b=braBox(R,sel);
  ctx.fillStyle='#111';ctx.strokeStyle=DIM;ctx.lineWidth=2;
- ctx.fillRect(bx,by,bw+pad*2,lh*lines.length+pad*2);
- ctx.strokeRect(bx,by,bw+pad*2,lh*lines.length+pad*2);
+ ctx.fillRect(b.bx,b.by,b.w,b.h);
+ ctx.strokeRect(b.bx,b.by,b.w,b.h);
  ctx.fillStyle=GREEN;ctx.textAlign='left';ctx.textBaseline='middle';
- lines.forEach(function(l,i){ctx.fillText(l,bx+pad,by+pad+lh*(i+0.5));});
+ ctx.font='bold '+b.fs+'px HornetDisplay,monospace';
+ b.lines.forEach(function(l,i){ctx.fillText(l,b.bx+b.pad,b.by+b.pad+b.lh*(i+0.5));});
 }
 function loop(){draw();requestAnimationFrame(loop);}
 window.addEventListener('resize',resize);
@@ -598,6 +680,14 @@ canvas.addEventListener('click',function(e){
  if(R<60)return;
  var hr=hudRect(R);
  if(x>=hr.px&&x<=hr.px+hr.pw&&y>=hr.py&&y<=hr.py+hr.ph){DEBUG=!DEBUG;return;}
+ if(state.selectedId){
+  var sel=null;
+  state.threats.forEach(function(t){if(t.id===state.selectedId)sel=t;});
+  if(sel){
+   var b=braBox(R,sel);
+   if(x>=b.bx&&x<=b.bx+b.w&&y>=b.by&&y<=b.by+b.h){toggleUnits();return;}
+  }
+ }
  var hdg=effectiveHeading(),innerR=R*0.15,cx=W/2,cy=H/2;
  var hit=null,hd=Infinity;
  state.threats.forEach(function(t){
@@ -661,7 +751,7 @@ function powerOff(){
  state.started=false;
  stopSounds();
  releaseWakeLock();
-  state.threats=[];state.top=null;state.selectedId=null;state.status='';state.osmText=(state.mode==='OSAPI'?'API':'OSM')+' --:--:--';
+  state.threats=[];state.top=null;state.selectedId=null;state.status='';state.osmText=(state.mode==='OSAPI'?'OSAPI':'OSM')+' --:--:--';
   state.fetchStart=null;state.refreshPending=false;
  updateButtons();
 }
