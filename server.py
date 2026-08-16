@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import http.server
+import json
+import math
 import os
 import re
 import socketserver
@@ -15,6 +17,31 @@ CACHE_BYTES = 0
 CACHE_TTL = 86400
 CACHE_MAX_BYTES = 10 * 1024 * 1024
 RETRYABLE = (429, 502, 503, 504)
+
+OSAPI = "https://opensky-network.org/api/states/all"
+OSAPI_TOKEN_URL = (
+    "https://auth.opensky-network.org/auth/realms/"
+    "opensky-network/protocol/openid-connect/token"
+)
+OSAPI_USER_AGENT = "https://github.com/ways/rwr"
+OSAPI_CACHE = {}
+OSAPI_CACHE_BYTES = 0
+OSAPI_CACHE_MAX_BYTES = 2 * 1024 * 1024
+OSAPI_CACHE_MAX_AGE = 3600
+RATE_LIMIT = {}
+RATE_WINDOW = 60.0
+try:
+    RATE_MAX = int(os.environ.get("RWR_RATE_MAX", 30))
+except ValueError:
+    RATE_MAX = 30
+OSAPI_CLIENT_ID = os.environ.get("OPENSKY_CLIENT_ID", "").strip()
+OSAPI_CLIENT_SECRET = os.environ.get("OPENSKY_CLIENT_SECRET", "").strip()
+OSAPI_CREDENTIALS = bool(OSAPI_CLIENT_ID and OSAPI_CLIENT_SECRET)
+_DEFAULT_OSAPI_TTL = 25 if OSAPI_CREDENTIALS else 240
+try:
+    OSAPI_TTL = int(os.environ.get("RWR_OSAPI_TTL", _DEFAULT_OSAPI_TTL))
+except ValueError:
+    OSAPI_TTL = _DEFAULT_OSAPI_TTL
 
 
 def _normalize_key(payload):
@@ -47,6 +74,97 @@ def _stale_fallback():
     if CACHE:
         return CACHE[max(CACHE, key=lambda k: CACHE[k]["time"])]
     return None
+
+
+def _prune_osapi_cache():
+    global OSAPI_CACHE_BYTES
+    now = time.time()
+    for k, v in list(OSAPI_CACHE.items()):
+        if v["ts"] + OSAPI_CACHE_MAX_AGE < now:
+            OSAPI_CACHE_BYTES -= v["size"]
+            del OSAPI_CACHE[k]
+    while OSAPI_CACHE and OSAPI_CACHE_BYTES > OSAPI_CACHE_MAX_BYTES:
+        k = min(OSAPI_CACHE, key=lambda k: OSAPI_CACHE[k]["ts"])
+        OSAPI_CACHE_BYTES -= OSAPI_CACHE[k]["size"]
+        del OSAPI_CACHE[k]
+
+
+def _rate_allowed(ip):
+    now = time.time()
+    if len(RATE_LIMIT) > 10000:
+        for k, (t, _) in list(RATE_LIMIT.items()):
+            if t + RATE_WINDOW < now:
+                del RATE_LIMIT[k]
+    bucket = RATE_LIMIT.get(ip)
+    if bucket is None or bucket[0] + RATE_WINDOW < now:
+        bucket = [now, 0]
+        RATE_LIMIT[ip] = bucket
+    bucket[1] += 1
+    return bucket[1] <= RATE_MAX
+
+
+class _TokenManager:
+    def __init__(self):
+        self.token = None
+        self.expires_at = 0
+
+    def get(self):
+        if self.token and time.time() < self.expires_at:
+            return self.token
+        self.token = None
+        if not OSAPI_CREDENTIALS:
+            return None
+        data = urllib.parse.urlencode(
+            {
+                "grant_type": "client_credentials",
+                "client_id": OSAPI_CLIENT_ID,
+                "client_secret": OSAPI_CLIENT_SECRET,
+            }
+        ).encode()
+        req = urllib.request.Request(OSAPI_TOKEN_URL, data=data, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                j = json.loads(resp.read().decode("utf-8", "replace"))
+            self.token = j.get("access_token")
+            self.expires_at = time.time() + int(j.get("expires_in", 1800)) - 30
+        except (OSError, ValueError):
+            self.token = None
+        return self.token
+
+
+TOKENS = _TokenManager()
+
+
+def _osapi_bbox(lat, lon, rng):
+    dlat = rng / 111320.0
+    dlon = rng / (111320.0 * math.cos(math.radians(lat)))
+    return {
+        "lamin": max(-90.0, lat - dlat),
+        "lamax": min(90.0, lat + dlat),
+        "lomin": max(-180.0, lon - dlon),
+        "lomax": min(180.0, lon + dlon),
+    }
+
+
+def _haversine(a_lat, a_lon, b_lat, b_lon):
+    d_lat = math.radians(b_lat - a_lat)
+    d_lon = math.radians(b_lon - a_lon)
+    s = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(math.radians(a_lat))
+        * math.cos(math.radians(b_lat))
+        * math.sin(d_lon / 2) ** 2
+    )
+    return 2 * 6371000.0 * math.asin(math.sqrt(s))
+
+
+def _bearing(a_lat, a_lon, b_lat, b_lon):
+    p1 = math.radians(a_lat)
+    p2 = math.radians(b_lat)
+    d_lon = math.radians(b_lon - a_lon)
+    y = math.sin(d_lon) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(d_lon)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -102,8 +220,121 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             ctype = "font/woff2" if name.endswith(".woff2") else "font/woff"
             self._send(200, body, ctype)
+        elif path == "/osapi":
+            self._osapi()
         else:
             self._send(404, b"not found")
+
+    def _osapi(self):
+        global OSAPI_CACHE_BYTES
+        if not _rate_allowed(self.client_address[0]):
+            self._send(429, b"rate limited")
+            return
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        try:
+            lat = float(q["lat"][0])
+            lon = float(q["lon"][0])
+            rng = float(q["range"][0])
+        except (KeyError, ValueError, IndexError):
+            self._send(400, b"lat, lon, range required")
+            return
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            self._send(400, b"bad coordinates")
+            return
+        if rng not in (10000, 50000):
+            self._send(400, b"range must be 10000 or 50000")
+            return
+        now = time.time()
+        key = "%.2f,%.2f,%.0f" % (lat, lon, rng)
+        cached = OSAPI_CACHE.get(key)
+        if cached is not None and cached["ts"] + OSAPI_TTL >= now:
+            print(f"[{time.strftime('%H:%M:%S')}] GET /osapi cache hit", flush=True)
+            self._send(200, cached["data"], "application/json")
+            return
+        bbox = _osapi_bbox(lat, lon, rng)
+        url = OSAPI + "?" + urllib.parse.urlencode(
+            {k: "%.4f" % v for k, v in bbox.items()}
+        )
+        headers = {"User-Agent": OSAPI_USER_AGENT}
+        token = TOKENS.get()
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        req = urllib.request.Request(url, headers=headers)
+        data = None
+        t1 = time.time()
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    data = json.loads(resp.read().decode("utf-8", "replace"))
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 401:
+                    TOKENS.token = None
+                if e.code in RETRYABLE and attempt == 0:
+                    time.sleep(2)
+                    continue
+                dt = time.time() - t1
+                print(
+                    f"[{time.strftime('%H:%M:%S')}] GET /osapi upstream -> {e.code} {dt:.2f}s",
+                    flush=True,
+                )
+                stale = OSAPI_CACHE.get(key)
+                if stale is not None:
+                    self._send(200, stale["data"], "application/json", {"X-RWR-Stale": "1"})
+                else:
+                    self._send(e.code, str(e.code).encode(), "text/plain")
+                return
+            except OSError as e:
+                dt = time.time() - t1
+                print(
+                    f"[{time.strftime('%H:%M:%S')}] GET /osapi upstream -> ERR {dt:.2f}s {e}",
+                    flush=True,
+                )
+                stale = OSAPI_CACHE.get(key)
+                if stale is not None:
+                    self._send(200, stale["data"], "application/json", {"X-RWR-Stale": "1"})
+                else:
+                    self._send(502, str(e).encode(), "text/plain")
+                return
+        states = []
+        for row in data.get("states") or []:
+            if len(row) < 14:
+                continue
+            a_lon, a_lat = row[5], row[6]
+            if a_lat is None or a_lon is None:
+                continue
+            dist = _haversine(lat, lon, a_lat, a_lon)
+            if dist > rng:
+                continue
+            alt = row[7]
+            if alt is None:
+                alt = row[13]
+            states.append(
+                {
+                    "id": row[0],
+                    "cs": (row[1] or "").strip(),
+                    "country": row[2],
+                    "lat": a_lat,
+                    "lon": a_lon,
+                    "alt": alt,
+                    "v": row[9],
+                    "t": row[10],
+                    "vr": row[11],
+                    "og": bool(row[8]),
+                    "d": round(dist, 1),
+                    "b": round(_bearing(lat, lon, a_lat, a_lon), 1),
+                }
+            )
+        states.sort(key=lambda s: s["d"])
+        body = json.dumps({"time": data.get("time"), "states": states}).encode("utf-8")
+        _prune_osapi_cache()
+        OSAPI_CACHE_BYTES += len(body)
+        OSAPI_CACHE[key] = {"data": body, "ts": now, "size": len(body)}
+        print(
+            f"[{time.strftime('%H:%M:%S')}] GET /osapi upstream -> 200 {time.time() - t1:.2f}s ({len(states)} states)",
+            flush=True,
+        )
+        self._send(200, body, "application/json")
 
     def do_POST(self):
         global CACHE_BYTES
@@ -111,7 +342,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path != "/overpass":
             self._send(404, b"not found")
             return
-        length = int(self.headers.get("Content-Length", 0))
+        if not _rate_allowed(self.client_address[0]):
+            self._send(429, b"rate limited")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0 or length > 1_000_000:
+            self._send(413, b"payload too large")
+            return
         payload = self.rfile.read(length)
         query = urllib.parse.parse_qs(payload).get(b"data", [payload])[0]
         key = _normalize_key(query)

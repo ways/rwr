@@ -14,6 +14,15 @@ Click an object to target it. Hold top left to show real object names. If you ge
 - ?debug=1
 - ?endpoint=https://...
 
+## Modes
+- **OSM** (default): ground objects from OpenStreetMap/Overpass. Ranges 500M/1KM/2KM.
+- **OSAPI**: live aircraft from the [OpenSky Network](https://opensky-network.org/api), refreshed every 3s. Ranges 10KM/50KM. The MODE button toggles between them and the choice is stored in local storage.
+
+The OpenSky upstream is proxied and cached by the python backend. Anonymous access is limited to 400 credits/day (~1 credit per query), so the backend only calls OpenSky at most every `RWR_OSAPI_TTL` seconds (default 240s anonymous). To get fresher data, create a free OpenSky API client (account → API clients) and set:
+
+- `OPENSKY_CLIENT_ID` and `OPENSKY_CLIENT_SECRET` — backend then fetches an OAuth2 bearer token and defaults `RWR_OSAPI_TTL` to 25s (4000 credits/day).
+- `RWR_OSAPI_TTL` — overrides the upstream cache TTL in seconds.
+
 ## Build container image
 - Copy font to fonts/
 - Download sound files from VTOL VR wiki and place in sounds/
