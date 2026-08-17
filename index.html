@@ -101,7 +101,8 @@ var state={
  simLat:null,simLon:null,simHdg:null,
  threats:[],top:null,selectedId:null,lastFetch:0,lastFetchLat:null,lastFetchLon:null,
   refreshPending:false,started:false,status:'POWER OFF',osmText:(localStorage.getItem('rwr.mode')==='OSAPI'?'OSAPI':'OSM')+' --:--:--',fetchStart:null,stale:false,cacheTried:false,
- range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET',dir:loadBool('rwr.dir',true)
+ range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET',dir:loadBool('rwr.dir',true),
+ messages:[],_lastStatus:null,_lastTxt:null
 };
 state.range=loadNum(modeCfg().key,modeCfg().ranges,modeCfg().def);
 if(params.get('lat'))state.simLat=parseFloat(params.get('lat'));
@@ -616,12 +617,23 @@ function drawHud(R,hdg){
   var ly=py+pad+lightS*0.55;
   drawLight(px+pad,ly,lightS,'POS',state.lat!=null);
   drawLight(px+pad+lightS+gap,ly,lightS,state.mode==='OSAPI'?'OSAPI':'OSM',oLit);
- ctx.textAlign='center';ctx.textBaseline='bottom';
- var bottomTxt='';
- if(state.fetchStart!=null)bottomTxt=(state.mode==='OSAPI'?'OSAPI':'OSM')+' WAIT '+((Date.now()-state.fetchStart)/1000).toFixed(1)+'S';
- else if(state.status)bottomTxt=state.status;
- else if(state.osmText.indexOf('STALE')>=0)bottomTxt=state.osmText;
- if(bottomTxt)ctx.fillText(bottomTxt,W/2,H-8);
+ ctx.textAlign='left';ctx.textBaseline='bottom';
+ var fs=R*0.06;
+ ctx.font='bold '+fs+'px HornetDisplay,monospace';
+ var lh=fs*1.4;
+ var curTxt='';
+ if(state.fetchStart!=null)curTxt=(state.mode==='OSAPI'?'OSAPI':'OSM')+' WAIT '+((Date.now()-state.fetchStart)/1000).toFixed(1)+'S';
+ else if(state.status)curTxt=state.status;
+ else if(state.osmText.indexOf('STALE')>=0)curTxt=state.osmText;
+ var curKey=curTxt?curTxt.replace(/ [\d.]+S$/,''):null;
+ if(curKey!==state._lastStatus){
+  if(state._lastStatus){state.messages.push(state._lastTxt);if(state.messages.length>2)state.messages.shift();}
+  state._lastStatus=curKey;
+ }
+ state._lastTxt=curTxt;
+ var y=H-8;
+ if(curTxt){ctx.fillStyle=GREEN;ctx.fillText(curTxt,10,y);y-=lh;}
+ for(var i=state.messages.length-1;i>=0;i--){ctx.fillStyle=DIM;ctx.fillText(state.messages[i],10,y);y-=lh;}
  drawBRA(R);
 }
 function braLines(sel){
