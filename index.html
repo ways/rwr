@@ -328,12 +328,13 @@ function processApi(data,staleHeader){
    old.miss=0;
    old.lat=o.lat;old.lon=o.lon;old.alt=o.alt;old.vel=o.v;old.track=o.t;old.vr=o.vr;
    old.onGround=o.og;old.cat=o.cat;old.callsign=o.cs;old.osname=o.cs;
+   old.sq=o.sq;old.spi=o.spi;
    old.bearing=bearing(state.lat,state.lon,o.lat,o.lon);old.dist=dist;
    list.push(old);
   }else{
    list.push({id:o.id,symbol:'^',callsign:o.cs,osname:o.cs,lat:o.lat,lon:o.lon,
     bearing:bearing(state.lat,state.lon,o.lat,o.lon),dist:dist,priority:0,miss:0,
-    alt:o.alt,vel:o.v,track:o.t,vr:o.vr,onGround:o.og,cat:o.cat});
+    alt:o.alt,vel:o.v,track:o.t,vr:o.vr,onGround:o.og,cat:o.cat,sq:o.sq,spi:o.spi});
   }
  });
  state.threats.forEach(function(t){
@@ -638,7 +639,9 @@ function braLines(sel){
   var hd=sel.track!=null?String(Math.round(sel.track)%360).padStart(4,' ')+'°':' ---';
   var sp=sel.vel!=null?(state.units==='IMP'?Math.round(sel.vel*1.943844):Math.round(sel.vel*3.6)):null;
   lines.push('H '+hd);
-  lines.push('S '+(sp!=null?String(sp).padStart(4,' ')+(state.units==='IMP'?'KT':'KM/H'):' ---'));
+   lines.push('S '+(sp!=null?String(sp).padStart(4,' ')+(state.units==='IMP'?'KT':'KM/H'):' ---'));
+   if(sel.sq)lines.push('Q '+sel.sq);
+   if(sel.spi)lines.push('SPI');
  }
  return lines;
 }

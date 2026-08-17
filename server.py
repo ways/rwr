@@ -356,6 +356,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "tp": row[3],
                     "lc": row[4],
                     "cat": row[17] if len(row) > 17 else None,
+                    "sq": row[14] if len(row) > 14 else None,
+                    "spi": row[15] if len(row) > 15 else False,
                     "d": round(dist, 1),
                     "b": round(_bearing(lat, lon, a_lat, a_lon), 1),
                 }
