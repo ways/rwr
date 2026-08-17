@@ -271,7 +271,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         bbox = _osapi_bbox(lat, lon, rng)
         url = OSAPI + "?" + urllib.parse.urlencode(
-            {k: "%.4f" % v for k, v in bbox.items()}
+            dict({k: "%.4f" % v for k, v in bbox.items()}, extended=1)
         )
         headers = {"User-Agent": OSAPI_USER_AGENT}
         token = TOKENS.get()

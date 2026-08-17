@@ -67,7 +67,7 @@ var DEBUG=params.get('debug')==='1';
 var ENDPOINT=params.get('endpoint')||'https://overpass-api.de/api/interpreter';
 var CATEGORIES=[
  {key:'amenity',vals:['fuel'],symbol:'4',name:'MAD4',priority:2},
- {key:'shop',vals:['food','supermarket','convenience','bakery','greengrocer','butcher'],symbol:'DC',name:'SAM',priority:1},
+ {key:'shop',vals:['food','supermarket','convenience','bakery','greengrocer','butcher'],symbol:'DS',name:'SAM',priority:1},
  {key:'man_made',vals:['antenna','communications_tower','communications_mast'],symbol:'EW',name:'EWR',priority:0},
  {key:'tower:type',vals:['communication'],symbol:'EW',name:'EWR',priority:0}
 ];
@@ -138,12 +138,25 @@ function pickTop(){
  });
  state.top=best;
 }
+var HELICOPTER_CS=['DOC','HEP'];
+function isHelicopterCS(cs){
+ for(var i=0;i<HELICOPTER_CS.length;i++){
+  if(cs.indexOf(HELICOPTER_CS[i])===0)return true;
+ }
+ return false;
+}
 function threatType(t){
- if(t.cat===8)return'AH';
+ if(t.cat===8)return'H';
+ if(t.cat===7)return'F+';
+ if(t.cat===5)return'E4';
+ if(t.cat===6)return'AE';
+ if(t.cat===2||t.cat===3)return'DF';
+ if(t.cat===16||t.cat===17)return'SA';
+ if((t.cat===0||t.cat==null)&&isHelicopterCS(t.callsign||''))return'H';
  return'F';
 }
 function threatGlyph(t){
- return{glyph:threatType(t),hat:!(t.onGround||(t.alt!=null&&t.alt<304.8))};
+ return{glyph:threatType(t),hat:t.cat!==16&&t.cat!==17&&!(t.onGround||t.alt===0)};
 }
 function threatScreen(t,hdg,R,innerR,cx,cy){
  var et=t;
