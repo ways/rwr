@@ -652,7 +652,7 @@ function drawBRA(R){
  ctx.font='bold '+b.fs+'px HornetDisplay,monospace';
  b.lines.forEach(function(l,i){ctx.fillText(l,b.bx+b.pad,b.by+b.pad+b.lh*(i+0.5));});
 }
-function loop(){draw();requestAnimationFrame(loop);}
+function loop(){draw();if(state.started)requestAnimationFrame(loop);}
 window.addEventListener('resize',resize);
 window.addEventListener('orientationchange',function(){setTimeout(resize,50);});
 btnPwr.addEventListener('click',function(){
@@ -729,12 +729,25 @@ function tryLoadCache(){
   state.osmText='OSM CACHE '+c.threats.length;
  }catch(e){}
 }
+function startTimers(){
+ if(ivFetch)return;
+ ivFetch=setInterval(maybeFetch,1000);
+ ivSound=setInterval(soundTick,SOUND_MS);
+ ivWake=setInterval(function(){if(state.started)wakeLock();},10000);
+}
+function stopTimers(){
+ clearInterval(ivFetch);ivFetch=null;
+ clearInterval(ivSound);ivSound=null;
+ clearInterval(ivWake);ivWake=null;
+}
 function powerOn(){
  if(state.started)return;
  state.started=true;
  state.cacheTried=false;
  updateButtons();
  wakeLock();
+ startTimers();
+ loop();
  if(!geoStarted){geoStarted=true;startGeo();}
  if(!headingStarted){headingStarted=true;startHeading();}
  unlockAudio();
@@ -748,6 +761,7 @@ function powerOff(){
  if(!state.started)return;
  state.started=false;
  stopSounds();
+ stopTimers();
  releaseWakeLock();
   state.threats=[];state.top=null;state.selectedId=null;state.status='';state.osmText=(state.mode==='OSAPI'?'OSAPI':'OSM')+' --:--:--';
   state.fetchStart=null;state.refreshPending=false;
@@ -767,13 +781,14 @@ document.addEventListener('touchstart',firstGesture,{passive:true});
 document.addEventListener('mousedown',firstGesture);
 document.addEventListener('pointerdown',firstGesture);
 document.addEventListener('keydown',firstGesture);
-document.addEventListener('visibilitychange',function(){if(!document.hidden&&state.started)wakeLock();});
+document.addEventListener('visibilitychange',function(){
+ if(document.hidden){stopTimers();return;}
+ if(state.started){startTimers();loop();wakeLock();}
+});
 
+var ivFetch=null,ivSound=null,ivWake=null;
 updateButtons();
-resize();loop();
-setInterval(maybeFetch,1000);
-setInterval(soundTick,SOUND_MS);
-setInterval(function(){if(state.started)wakeLock();},10000);
+resize();
 })();
 </script>
 </body>
