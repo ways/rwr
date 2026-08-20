@@ -167,7 +167,7 @@ function threatScreen(t,hdg,R,innerR,cx,cy){
 }
 
 function startGeo(){
- if(state.simLat!=null){state.lat=state.simLat;state.lon=state.simLon;state.gpsFix=true;state.gpsText='GPS SIM';return;}
+ if(state.simLat!=null){state.lat=state.simLat;state.lon=state.simLon;state.gpsFix=true;state.gpsText='GPS SIM';goFullscreen();return;}
  if(!('geolocation' in navigator)){state.gpsText='GPS NA';state.status='GEOLOCATION UNAVAILABLE';return;}
  navigator.geolocation.watchPosition(function(p){
   var c=p.coords;
@@ -175,6 +175,7 @@ function startGeo(){
   state.gpsHdg=c.heading;state.gpsFix=true;
   state.gpsAlt=c.altitude;
   state.gpsText='GPS OK'+(c.heading!=null?' TRK'+Math.round(c.heading):'');
+  if(!geoFullscreenDone){geoFullscreenDone=true;goFullscreen();}
   pickTop();
   maybeFetch();
   tryLoadCache();
@@ -679,9 +680,6 @@ window.addEventListener('orientationchange',function(){setTimeout(resize,50);});
 btnPwr.addEventListener('click',function(){
  if(state.started){powerOff();return;}
  powerOn();
- var el=document.documentElement;
- if(el.requestFullscreen)el.requestFullscreen().catch(function(){});
- else if(el.webkitRequestFullscreen)el.webkitRequestFullscreen();
 });
 btnMode.addEventListener('click',toggleMode);
 btnRng.addEventListener('click',cycleRange);
@@ -755,6 +753,12 @@ function stopTimers(){
  clearInterval(ivFetch);ivFetch=null;
  clearInterval(ivSound);ivSound=null;
  clearInterval(ivWake);ivWake=null;
+}
+var geoFullscreenDone=false;
+function goFullscreen(){
+ var el=document.documentElement;
+ if(el.requestFullscreen)el.requestFullscreen().catch(function(){});
+ else if(el.webkitRequestFullscreen)el.webkitRequestFullscreen();
 }
 function powerOn(){
  if(state.started)return;
