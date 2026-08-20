@@ -18,6 +18,7 @@ html,body{margin:0;padding:0;background:#000;color:#0f0;font-family:HornetDispla
 .mbtn .circle{position:absolute;top:7px;left:7px;width:48px;height:48px;border-radius:50%;background:#4a4a4a;}
 .mbtn .line{display:none;position:absolute;top:19px;left:50%;width:6px;height:24px;background:#d8ffd8;border-radius:3px;transform:translateX(-50%);}
 .mbtn.active .line{display:block;}
+.mbtn.boost .line{display:block;background:#ff8c00;}
 .mbtn:active{background:#555;}
 </style>
 </head>
@@ -97,7 +98,7 @@ var state={
  simLat:null,simLon:null,simHdg:null,
  threats:[],top:null,selectedId:null,lastFetch:0,lastFetchLat:null,lastFetchLon:null,
   refreshPending:false,started:false,status:'POWER OFF',osmText:(localStorage.getItem('rwr.mode')==='OSAPI'?'OSAPI':'OSM')+' --:--:--',fetchStart:null,stale:false,cacheTried:false,
- range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET',
+ range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET',boost:false,
  messages:[],_lastStatus:null,_lastTxt:null
 };
 state.range=loadNum(modeCfg().key,modeCfg().ranges,modeCfg().def);
@@ -393,6 +394,7 @@ function updateButtons(){
  lblRng.textContent='RNG '+fmtDist(state.range);
  lblSnd.textContent='SND';
  btnPwr.classList.toggle('active',state.started);
+ btnPwr.classList.toggle('boost',state.boost);
  btnMode.classList.add('active');
  btnSnd.classList.toggle('active',state.sound);
  btnRng.classList.add('active');
@@ -677,10 +679,24 @@ function drawBRA(R){
 function loop(){draw();if(state.started)requestAnimationFrame(loop);}
 window.addEventListener('resize',resize);
 window.addEventListener('orientationchange',function(){setTimeout(resize,50);});
-btnPwr.addEventListener('click',function(){
+var pwrDownTime=0,pwrHeld=false,pwrTimer=null;
+btnPwr.addEventListener('pointerdown',function(e){
+ pwrDownTime=Date.now();pwrHeld=false;
+ clearTimeout(pwrTimer);
+ pwrTimer=setTimeout(function(){
+  if(!state.started)return;
+  pwrHeld=true;
+  state.boost=!state.boost;
+  updateButtons();
+ },3000);
+});
+btnPwr.addEventListener('pointerup',function(){
+ clearTimeout(pwrTimer);
+ if(pwrHeld){pwrHeld=false;return;}
  if(state.started){powerOff();return;}
  powerOn();
 });
+btnPwr.addEventListener('pointercancel',function(){clearTimeout(pwrTimer);});
 btnMode.addEventListener('click',toggleMode);
 btnRng.addEventListener('click',cycleRange);
 btnSnd.addEventListener('click',toggleSound);
@@ -780,6 +796,7 @@ function powerOn(){
 function powerOff(){
  if(!state.started)return;
  state.started=false;
+ state.boost=false;
  stopSounds();
  stopTimers();
  releaseWakeLock();
@@ -802,7 +819,10 @@ document.addEventListener('mousedown',firstGesture);
 document.addEventListener('pointerdown',firstGesture);
 document.addEventListener('keydown',firstGesture);
 document.addEventListener('visibilitychange',function(){
- if(document.hidden){stopTimers();return;}
+ if(document.hidden){
+  if(!state.boost)stopTimers();
+  return;
+ }
  if(state.started){startTimers();loop();wakeLock();}
 });
 
