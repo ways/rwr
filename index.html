@@ -580,8 +580,8 @@ function osmLit(){
  if(state.status&&state.status.indexOf('ERR')>=0)return false;
  return true;
 }
-function drawLight(x,y,w,h,label,lit){
- ctx.fillStyle=lit?GREEN:'#003300';
+function drawLight(x,y,w,h,label,lit,color){
+ ctx.fillStyle=lit?(color||GREEN):'#003300';
  ctx.fillRect(x,y,w,h);
  ctx.strokeStyle='#3a3a3a';ctx.strokeRect(x,y,w,h);
  ctx.fillStyle='#000000';
@@ -592,9 +592,9 @@ function drawLight(x,y,w,h,label,lit){
 function hudRect(R){
  var lightS=R*0.124;
  var lightW=lightS*3;
- var gap=R*0.09;
+ var gap=R*0.03;
  var pad=R*0.02;
- return{pw:pad*2+lightW,ph:pad*2+lightS*2+gap,px:10,py:6,pad:pad,lightS:lightS,gap:gap,lightW:lightW};
+ return{pw:pad*2+lightW,ph:pad*2+lightS*3+gap*2,px:10,py:6,pad:pad,lightS:lightS,gap:gap,lightW:lightW};
 }
 function drawHud(R,hdg){
  ctx.textAlign='right';ctx.textBaseline='top';
@@ -611,8 +611,9 @@ function drawHud(R,hdg){
   var oLit=osmLit();
   if(state.fetchStart!=null)oLit=(Math.floor(Date.now()/350)%2)===0;
   var ly=py+pad;
-  drawLight(px+pad,ly,lightW,lightS,'POS',state.lat!=null);
+  drawLight(px+pad,ly,lightW,lightS,'GPS',state.lat!=null);
   drawLight(px+pad,ly+lightS+gap,lightW,lightS,state.mode==='OSAPI'?'OSAPI':'OSM',oLit);
+  drawLight(px+pad,ly+lightS*2+gap*2,lightW,lightS,'TRACK',lockActive,'#ff0000');
  ctx.textAlign='left';ctx.textBaseline='bottom';
  var fs=R*0.06;
  ctx.font='bold '+fs+'px HornetDisplay,monospace';
