@@ -286,7 +286,7 @@ function process(data,staleHeader){
   state.threats=merged;
   try{localStorage.setItem(CACHE_KEY,JSON.stringify({lat:state.lat,lon:state.lon,ts:now,threats:merged}));}catch(e){}
   var fresh=false;
-  merged.forEach(function(t){if(!known[t.id]){fresh=true;known[t.id]=1;}});
+  merged.forEach(function(t){if(!known[t.id]){fresh=true;known[t.id]=1;state.messages.push('New contact, '+(t.osname||t.name||t.tag||'Unknown'));if(state.messages.length>6)state.messages.shift();}});
   if(fresh&&!firstFetch&&state.sound)tryPlay(audioNew);
   pickTop();
  var d=new Date(now);
@@ -343,9 +343,9 @@ function processApi(data,staleHeader){
  });
  list.sort(function(a,b){return a.dist-b.dist;});
  state.threats=list;
- var fresh=false;
- list.forEach(function(t){if(!known[t.id]){fresh=true;known[t.id]=1;}});
- if(fresh&&!firstFetch&&state.sound)tryPlay(audioNew);
+  var fresh=false;
+  list.forEach(function(t){if(!known[t.id]){fresh=true;known[t.id]=1;state.messages.push('New contact, '+(t.callsign||'Unknown'));if(state.messages.length>6)state.messages.shift();}});
+  if(fresh&&!firstFetch&&state.sound)tryPlay(audioNew);
  pickTop();
  var d=new Date(now);
  function p2(n){return String(n).padStart(2,'0');}
@@ -664,7 +664,7 @@ function drawHud(R,hdg){
  else if(state.osmText.indexOf('STALE')>=0)curTxt=state.osmText;
  var curKey=curTxt?curTxt.replace(/ [\d.]+S$/,''):null;
  if(curKey!==state._lastStatus){
-  if(state._lastStatus){state.messages.push(state._lastTxt);if(state.messages.length>2)state.messages.shift();}
+   if(state._lastStatus){state.messages.push(state._lastTxt);if(state.messages.length>6)state.messages.shift();}
   state._lastStatus=curKey;
  }
  state._lastTxt=curTxt;
