@@ -580,21 +580,21 @@ function osmLit(){
  if(state.status&&state.status.indexOf('ERR')>=0)return false;
  return true;
 }
-function drawLight(x,y,s,label,lit){
+function drawLight(x,y,w,h,label,lit){
  ctx.fillStyle=lit?GREEN:'#003300';
- ctx.fillRect(x,y,s,s);
- ctx.strokeStyle='#3a3a3a';ctx.strokeRect(x,y,s,s);
- ctx.fillStyle=lit?GREEN:DIM;
-  ctx.font='bold '+(s*0.42*Math.min(1,3.5/label.length))+'px HornetDisplay,monospace';
+ ctx.fillRect(x,y,w,h);
+ ctx.strokeStyle='#3a3a3a';ctx.strokeRect(x,y,w,h);
+ ctx.fillStyle='#000000';
+ ctx.font='bold '+(h*0.55)+'px HornetDisplay,monospace';
  ctx.textAlign='center';ctx.textBaseline='middle';
- ctx.fillText(label,x+s/2,y-s*0.25);
+ ctx.fillText(label,x+w/2,y+h/2);
 }
 function hudRect(R){
  var lightS=R*0.124;
+ var lightW=lightS*3;
  var gap=R*0.09;
- var labelH=lightS*0.55;
  var pad=R*0.02;
- return{pw:pad*2+lightS*2+gap,ph:pad*2+labelH+lightS,px:10,py:6,pad:pad,lightS:lightS,gap:gap};
+ return{pw:pad*2+lightW,ph:pad*2+lightS*2+gap,px:10,py:6,pad:pad,lightS:lightS,gap:gap,lightW:lightW};
 }
 function drawHud(R,hdg){
  ctx.textAlign='right';ctx.textBaseline='top';
@@ -603,16 +603,16 @@ function drawHud(R,hdg){
  ctx.fillText(state.lat!=null?('POS '+state.lat.toFixed(5)+' '+state.lon.toFixed(5)):'POS ---',W-10,10+R*0.07+2);
  ctx.fillText(state.osmText,W-10,10+2*(R*0.07+2));
   var hr=hudRect(R);
-  var px=hr.px,py=hr.py,pad=hr.pad,lightS=hr.lightS,gap=hr.gap;
+  var px=hr.px,py=hr.py,pad=hr.pad,lightS=hr.lightS,gap=hr.gap,lightW=hr.lightW;
   ctx.fillStyle='#111';
   ctx.strokeStyle=DIM;
   ctx.fillRect(px,py,hr.pw,hr.ph);
   ctx.strokeRect(px,py,hr.pw,hr.ph);
   var oLit=osmLit();
   if(state.fetchStart!=null)oLit=(Math.floor(Date.now()/350)%2)===0;
-  var ly=py+pad+lightS*0.55;
-  drawLight(px+pad,ly,lightS,'POS',state.lat!=null);
-  drawLight(px+pad+lightS+gap,ly,lightS,state.mode==='OSAPI'?'OSAPI':'OSM',oLit);
+  var ly=py+pad;
+  drawLight(px+pad,ly,lightW,lightS,'POS',state.lat!=null);
+  drawLight(px+pad,ly+lightS+gap,lightW,lightS,state.mode==='OSAPI'?'OSAPI':'OSM',oLit);
  ctx.textAlign='left';ctx.textBaseline='bottom';
  var fs=R*0.06;
  ctx.font='bold '+fs+'px HornetDisplay,monospace';
