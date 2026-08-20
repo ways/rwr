@@ -424,7 +424,11 @@ function toggleSound(){
  localStorage.setItem('rwr.snd',state.sound?'1':'0');
  updateButtons();
  if(state.sound){unlockAudio();soundTick();}
- else stopSounds();
+ else{
+  try{audioPing.pause();audioPing.currentTime=0;}catch(e){}
+  try{audioLock.pause();audioLock.currentTime=0;}catch(e){}
+  try{audioNew.pause();audioNew.currentTime=0;}catch(e){}
+ }
 }
 
 var audioPing=new Audio('sounds/RwrPing.ogg');
@@ -452,18 +456,22 @@ function stopSounds(){
  try{audioNew.pause();audioNew.currentTime=0;}catch(e){}
 }
 function soundTick(){
- if(!state.started){stopSounds();return;}
- if(!state.sound||!state.threats.length){stopSounds();return;}
+ if(!state.started){lockActive=false;stopSounds();return;}
  var min=Infinity;
  state.threats.forEach(function(t){if(t.dist<min)min=t.dist;});
  var lockDist=(state.mode==='OSAPI')?2000:200;
- var locked=min<lockDist;
- if(locked){
-  lockActive=true;
+ lockActive=min<lockDist;
+ if(!state.sound||!state.threats.length){
+  try{audioPing.pause();audioPing.currentTime=0;}catch(e){}
+  try{audioLock.pause();audioLock.currentTime=0;}catch(e){}
+  try{audioNew.pause();audioNew.currentTime=0;}catch(e){}
+  return;
+ }
+ if(lockActive){
   try{audioPing.pause();audioPing.currentTime=0;}catch(e){}
   if(audioLock.paused)tryPlay(audioLock);
  }else{
-  if(lockActive){lockActive=false;try{audioLock.pause();audioLock.currentTime=0;}catch(e){}}
+  try{audioLock.pause();audioLock.currentTime=0;}catch(e){}
   try{audioPing.currentTime=0;}catch(e){}
   if(audioPing.paused)tryPlay(audioPing);
  }
