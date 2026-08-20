@@ -253,8 +253,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             self._send(400, b"bad coordinates")
             return
-        if rng not in (10000, 50000):
-            self._send(400, b"range must be 10000 or 50000")
+        if not (1000 <= rng <= 50000):
+            self._send(400, b"range must be 1000-50000")
             return
         now = time.time()
         key = "%.2f,%.2f,%.0f" % (lat, lon, rng)
