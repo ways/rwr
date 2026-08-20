@@ -44,7 +44,7 @@ var WHITE='#ffffff';
 var BAR=110;
 var SOUND_MS=1500;
 var MODE_CFG={
- OSM:{ranges:[500,1000,2000],def:1000,max:2000,drop:5000,key:'rwr.rng'},
+ OSM:{ranges:[500,1000,2000,3000,5000],def:1000,max:5000,drop:8000,key:'rwr.rng'},
  OSAPI:{ranges:[10000,50000],def:10000,max:50000,drop:60000,key:'rwr.rngApi'}
 };
 var CACHE_KEY='rwr.cache';
@@ -575,18 +575,20 @@ function draw(){
   if(state.rangePopup)drawRangePopup(R);
 }
 function drawRangePopup(R){
+ var rngMax=modeCfg().max;
  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,W,H);
  var barW=W*0.08,barH=H*0.7;
  var barX=W-barW-30,barY=(H-barH)/2;
  ctx.fillStyle='#003300';ctx.fillRect(barX,barY,barW,barH);
  ctx.strokeStyle=GREEN;ctx.strokeRect(barX,barY,barW,barH);
- for(var km=5;km<=50;km+=5){
-  var t=(km-1000)/49000;
+ var tStep=rngMax<=10000?1:5;
+ for(var km=tStep;km<rngMax/1000;km+=tStep){
+  var t=(km*1000)/rngMax;
   var ty=barY+barH*(1-t);
   ctx.strokeStyle=DIM;ctx.beginPath();
   ctx.moveTo(barX,ty);ctx.lineTo(barX+barW*0.3,ty);ctx.stroke();
  }
- var t=(state.range-1000)/49000;
+ var t=(state.range)/rngMax;
  t=Math.max(0,Math.min(1,t));
  var my=barY+barH*(1-t);
  ctx.strokeStyle=GREEN;ctx.lineWidth=3;
@@ -598,9 +600,10 @@ function drawRangePopup(R){
  ctx.fillText(fmtDist(state.range),barX-10,my);
  ctx.font='bold '+(R*0.05)+'px HornetDisplay,monospace';
  ctx.textAlign='center';ctx.textBaseline='bottom';
- ctx.fillText('50KM',barX+barW/2,barY-6);
+ ctx.fillText(fmtDist(rngMax),barX+barW/2,barY-6);
  ctx.textBaseline='top';ctx.fillText('1KM',barX+barW/2,barY+barH+6);
  state._barX=barX;state._barY=barY;state._barW=barW;state._barH=barH;
+ state._rngMax=rngMax;
 }
 function osmLit(){
  if(state.fetchStart!=null)return false;
@@ -751,7 +754,7 @@ canvas.addEventListener('click',function(e){
   var bx=state._barX,by=state._barY,bw=state._barW,bh=state._barH;
   if(x>=bx&&x<=bx+bw&&y>=by&&y<=by+bh){
    var t=1-(y-by)/bh;t=Math.max(0,Math.min(1,t));
-   state.range=Math.round((1000+t*49000)/1000)*1000;
+    state.range=Math.round((1000+t*(state._rngMax-1000))/1000)*1000;
    localStorage.setItem(modeCfg().key,String(state.range));
   }
   state.rangePopup=false;updateButtons();return;
