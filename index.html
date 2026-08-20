@@ -11,9 +11,9 @@
 @font-face{font-family:'HornetDisplay';src:url('fonts/HornetDisplay-Bold.woff2') format('woff2'),url('fonts/HornetDisplay-Bold.woff') format('woff');font-weight:700;font-display:swap;}
 html,body{margin:0;padding:0;background:#000;color:#0f0;font-family:HornetDisplay,monospace;height:100%;overflow:hidden;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;}
 #scope{display:block;background:#000;}
-#btnbar{position:fixed;left:0;right:0;bottom:0;height:110px;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:22px 2px 62px;row-gap:6px;column-gap:4px;align-items:center;justify-items:center;background:#000;padding:4px 10px;box-sizing:border-box;z-index:5;}
+#btnbar{position:fixed;left:0;right:0;bottom:0;height:110px;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:22px 2px 62px;row-gap:6px;column-gap:4px;align-items:center;justify-items:center;background:#000;padding:4px 10px;box-sizing:border-box;z-index:5;}
 .blabel{font-family:HornetDisplay,monospace;font-size:18px;font-weight:700;letter-spacing:1px;color:#00ff00;text-align:center;width:100%;}
-#btnline{grid-column:1/6;width:100%;height:2px;background:#666;}
+#btnline{grid-column:1/5;width:100%;height:2px;background:#666;}
 .mbtn{width:62px;height:62px;background:#3a3a3a;border:1px solid #555;border-radius:3px;position:relative;cursor:pointer;touch-action:manipulation;box-shadow:inset 0 0 0 1px #222;}
 .mbtn .circle{position:absolute;top:7px;left:7px;width:48px;height:48px;border-radius:50%;background:#4a4a4a;}
 .mbtn .line{display:none;position:absolute;top:19px;left:50%;width:6px;height:24px;background:#d8ffd8;border-radius:3px;transform:translateX(-50%);}
@@ -27,13 +27,11 @@ html,body{margin:0;padding:0;background:#000;color:#0f0;font-family:HornetDispla
   <span class="blabel" id="lblPwr">PWR</span>
   <span class="blabel" id="lblMode">MODE</span>
   <span class="blabel" id="lblRng">RNG 1KM</span>
-  <span class="blabel" id="lblDir">DIR HDG</span>
   <span class="blabel" id="lblSnd">SND</span>
   <div id="btnline"></div>
   <button id="btnPwr" class="mbtn"><span class="circle"></span><span class="line"></span></button>
   <button id="btnMode" class="mbtn"><span class="circle"></span><span class="line"></span></button>
   <button id="btnRng" class="mbtn"><span class="circle"></span><span class="line"></span></button>
-  <button id="btnDir" class="mbtn"><span class="circle"></span><span class="line"></span></button>
   <button id="btnSnd" class="mbtn"><span class="circle"></span><span class="line"></span></button>
 </div>
 <script>
@@ -55,12 +53,10 @@ var ctx=canvas.getContext('2d');
 var btnPwr=document.getElementById('btnPwr');
 var btnMode=document.getElementById('btnMode');
 var btnRng=document.getElementById('btnRng');
-var btnDir=document.getElementById('btnDir');
 var btnSnd=document.getElementById('btnSnd');
 var lblPwr=document.getElementById('lblPwr');
 var lblMode=document.getElementById('lblMode');
 var lblRng=document.getElementById('lblRng');
-var lblDir=document.getElementById('lblDir');
 var lblSnd=document.getElementById('lblSnd');
 var params=new URLSearchParams(location.search);
 var DEBUG=params.get('debug')==='1';
@@ -101,7 +97,7 @@ var state={
  simLat:null,simLon:null,simHdg:null,
  threats:[],top:null,selectedId:null,lastFetch:0,lastFetchLat:null,lastFetchLon:null,
   refreshPending:false,started:false,status:'POWER OFF',osmText:(localStorage.getItem('rwr.mode')==='OSAPI'?'OSAPI':'OSM')+' --:--:--',fetchStart:null,stale:false,cacheTried:false,
- range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET',dir:loadBool('rwr.dir',true),
+ range:null,sound:loadBool('rwr.snd',true),units:localStorage.getItem('rwr.units')==='IMP'?'IMP':'MET',
  messages:[],_lastStatus:null,_lastTxt:null
 };
 state.range=loadNum(modeCfg().key,modeCfg().ranges,modeCfg().def);
@@ -121,7 +117,6 @@ function bearing(aLat,aLon,bLat,bLon){
  return norm(Math.atan2(Math.sin(dl)*Math.cos(p2),Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl))*180/Math.PI);
 }
 function effectiveHeading(){
- if(!state.dir)return 0;
  if(state.simHdg!=null)return state.simHdg;
  return state.headingRaw!=null?norm(state.headingRaw):0;
 }
@@ -400,8 +395,6 @@ function updateButtons(){
  btnMode.classList.add('active');
  btnSnd.classList.toggle('active',state.sound);
  btnRng.classList.add('active');
- lblDir.textContent='DIR '+(state.dir?'HDG':'N');
- btnDir.classList.toggle('active',state.dir);
 }
 function cycleRange(){
  var c=modeCfg();
@@ -692,11 +685,6 @@ btnPwr.addEventListener('click',function(){
 });
 btnMode.addEventListener('click',toggleMode);
 btnRng.addEventListener('click',cycleRange);
-btnDir.addEventListener('click',function(){
- state.dir=!state.dir;
- localStorage.setItem('rwr.dir',state.dir?'1':'0');
- updateButtons();
-});
 btnSnd.addEventListener('click',toggleSound);
 canvas.addEventListener('click',function(e){
  if(!state.started)return;
