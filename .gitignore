@@ -2,3 +2,4 @@ __pycache__
 .env
 sounds
 fonts
+.ruff_cache
