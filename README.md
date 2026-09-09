@@ -6,7 +6,7 @@ A web based Radar Warning Receiver for mobile phones.
 [Demo](https://falkp.no/rwr/)
 
 ## Explanation
-For fun and aviation nerding. This "RWR" simulator has two modes: ground and air.
+For fun and aviation nerding. This "RWR" simulator has three modes: ground, air and public transport.
 
 Click an object to target it. Hold top left to show real object names. If you get to close to a target, it will spike you.
 
@@ -15,6 +15,9 @@ The RWR shows objects from openstreetmap. Supermarkets are shown as "DS" (SAM si
 
 ### Air
 The RWR shows objects from [OpenSky Network](https://opensky-network.org/api), refreshed every 2s. Ranges 10KM/50KM.
+
+### Public transport
+The RWR streams live vehicle positions from [Entur](https://developer.entur.no/docs/open-services/vehicle-positions) over a WebSocket push (`graphql-transport-ws`), within a bounding box that follows you. Ranges 0.5KM-5KM. Transport modes map to threat symbology: buses/coaches are "F" (or "F+" when their position is estimated, i.e. `monitored=false`), metro and trams are "SA", trains are "AE", and boats/ferries are "MC". All Entur requests identify with the `ET-Client-Name` header (default `rwr-rwr`, override with `?etclient=`).
 
 ## Build container image
 - Copy font to fonts/
