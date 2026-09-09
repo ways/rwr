@@ -96,7 +96,7 @@ var CATEGORIES=[
 function loadNum(k,ranges,d){var v=parseInt(localStorage.getItem(k),10);return ranges.indexOf(v)>=0?v:d;}
 function loadBool(k,d){var v=localStorage.getItem(k);return v===null?d:v==='1';}
 function modeCfg(){return MODE_CFG[state.mode];}
-function modeLabel(){return state.mode==='OSAPI'?'OSAPI':state.mode==='GND'?'GND':'OSM';}
+function modeLabel(){return state.mode==='OSM'?'OSM':'SENSOR';}
 function modeBtnLabel(){return state.mode==='OSAPI'?'AIR':state.mode==='GND'?'GND':'OSM';}
 function fmtClock(t){var d=new Date(t);
  function p2(n){return String(n).padStart(2,'0');}
@@ -691,8 +691,9 @@ function soundTick(){
  if(!state.started){lockActive=false;stopSounds();return;}
  var min=Infinity;
  var rng=state.range;
+ var lk=modeCfg().lock;
  state.threats.forEach(function(t){if(!t.isStop&&t.dist<rng&&t.dist<min)min=t.dist;});
- lockActive=min<rng;
+ lockActive=min<lk;
  if(!state.sound||min===Infinity){
   try{audioPing.pause();audioPing.currentTime=0;}catch(e){}
   try{audioLock.pause();audioLock.currentTime=0;}catch(e){}
